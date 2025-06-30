@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 10:28:41 PM CST 2025
+# 构建时间: Mon Jun 30 11:29:58 PM CST 2025
 
 set -e
 
@@ -13,7 +13,7 @@ set -e
 SCRIPT_NAME="Linux Mirror Switch"
 SCRIPT_VERSION="1.0.0"
 SCRIPT_AUTHOR="Mirror Proxy Team"
-# 默认Worker域名 (用户需要修改)
+# 默认自定义源域名 (用户需要修改)
 DEFAULT_WORKER_DOMAIN="your-worker.workers.dev"
 # 备份配置
 BACKUP_DIR="/etc/apt/sources.list.backup"
@@ -173,7 +173,7 @@ validate_domain() {
     
     # 检查是否为默认域名
     if [ "$domain" = "$DEFAULT_WORKER_DOMAIN" ]; then
-        echo_warning "您正在使用默认域名，请确保已部署Worker"
+        echo_warning "您正在使用默认域名，请确保已部署自定义源"
     fi
     
     return 0
@@ -193,8 +193,51 @@ format_timestamp() {
 }
 # ===== 系统检测模块 =====
 # 系统检测模块
+# 检测网络速度
+check_network_speed() {
+    local test_url
+    local os=$(detect_os)
+    case "$os" in
+        debian|ubuntu)
+            test_url="http://deb.debian.org/debian/"
+            ;;
+        alpine)
+            test_url="http://dl-cdn.alpinelinux.org/"
+            ;;
+        *)
+            return 0  # 未知系统，跳过检测
+            ;;
+    esac
+    # 测试网络速度（3秒超时）
+    local speed=$(curl -w '%{speed_download}' -o /dev/null -s --connect-timeout 3 --max-time 3 "$test_url" 2>/dev/null || echo "0")
+    local speed_kb=$(echo "$speed" | awk '{print int($1/1024)}')
+    if [ "$speed_kb" -lt 50 ]; then  # 小于50KB/s认为网络慢
+        return 1
+    else
+        return 0
+    fi
+}
 # 启动时更新软件包列表
 update_package_list_on_startup() {
+    # 检测网络速度
+    if ! check_network_speed; then
+        echo_warning "⚠️ 检测到网络较慢，软件包列表更新可能耗时较长"
+        echo_info "💡 提示：可以使用 --fast 参数跳过更新，或按 Ctrl+C 中断"
+        echo_info "跳过更新不会影响镜像源切换功能"
+        echo
+        # 等待用户输入
+        read -p "$(echo -e "${BRIGHT_YELLOW}是否继续更新？(Y/n): ${NC}")" choice
+        case "$choice" in
+            [Nn]*)
+                echo_info "⚡ 跳过软件包列表更新"
+                return 0
+                ;;
+            *)
+                echo_info "继续进行软件包列表更新..."
+                ;;
+        esac
+        echo  # 换行
+    fi
     echo_info "🔄 正在更新软件包列表..."
     local os=$(detect_os)
     case "$os" in
@@ -542,8 +585,10 @@ $SCRIPT_NAME v$SCRIPT_VERSION
   -b, --backup            仅创建备份
   -t, --test              测试自定义源连接
   -l, --list              列出备份
+  -f, --fast              快速启动，跳过软件包列表更新
 示例:
   $0                                          # 交互式模式
+  $0 --fast                                   # 快速启动（跳过更新）
   $0 -d mirror.yourdomain.com                # 指定自定义源域名
   $0 -y -d mirror.yourdomain.com             # 非交互模式
   $0 --test -d mirror.yourdomain.com         # 测试连接
@@ -599,13 +644,13 @@ input_worker_domain() {
         return 0
     fi
     # 输出提示信息到stderr，避免污染函数返回值
-    echo_info "请输入您的Cloudflare Worker域名" >&2
+    echo_info "请输入您的镜像源域名" >&2
     echo_info "例如: mirror.yourdomain.com 或 your-worker.workers.dev" >&2
     if [ -n "$current_domain" ]; then
-        read -p "$(echo -e "${ICON_QUESTION} Worker域名 [$current_domain]: ")" domain
+        read -p "$(echo -e "${ICON_QUESTION} 域名 [$current_domain]: ")" domain
         domain=${domain:-$current_domain}
     else
-        read -p "$(echo -e "${ICON_QUESTION} Worker域名: ")" domain
+        read -p "$(echo -e "${ICON_QUESTION} 域名: ")" domain
     fi
     # 清理输入：去除前后空格和换行符
     domain=$(echo "$domain" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -871,11 +916,31 @@ show_completion() {
     echo
     echo -e "${BRIGHT_GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BRIGHT_GREEN}║${NC}  ${ICON_SUCCESS} ${BRIGHT_WHITE}${BOLD}换源完成！${NC}                                        ${BRIGHT_GREEN}║${NC}"
-    echo -e "${BRIGHT_GREEN}║${NC}  ${BRIGHT_GREEN}🎉 已成功切换到Worker镜像源${NC}                          ${BRIGHT_GREEN}║${NC}"
+    echo -e "${BRIGHT_GREEN}║${NC}  ${BRIGHT_GREEN}🎉 已成功切换到自定义源${NC}                              ${BRIGHT_GREEN}║${NC}"
     echo -e "${BRIGHT_GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo
     echo -e "${BRIGHT_BLUE}┌─ 配置详情 ───────────────────────────────────────────────────┐${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_CYAN}🌐 Worker域名:${NC} ${BRIGHT_WHITE}$worker_domain${NC}"
+    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_CYAN}🌐 自定义源域名:${NC} ${BRIGHT_WHITE}$worker_domain${NC}"
+    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_CYAN}📁 配置文件:${NC} ${BRIGHT_WHITE}$(get_config_path)${NC}"
+    echo -e "${BRIGHT_BLUE}└─────────────────────────────────────────────────────────────┘${NC}"
+    echo
+    echo -e "${BRIGHT_YELLOW}💡 ${BOLD}提示:${NC} ${YELLOW}如需恢复原有配置，请运行:${NC}"
+    echo -e "   ${BRIGHT_WHITE}$0 --restore${NC}"
+    echo
+}
+# 显示内置镜像源换源完成信息
+show_builtin_completion() {
+    local mirror_name="$1"
+    local mirror_url="$2"
+    echo
+    echo -e "${BRIGHT_GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BRIGHT_GREEN}║${NC}  ${ICON_SUCCESS} ${BRIGHT_WHITE}${BOLD}换源完成！${NC}                                        ${BRIGHT_GREEN}║${NC}"
+    echo -e "${BRIGHT_GREEN}║${NC}  ${BRIGHT_GREEN}🎉 已成功切换到${mirror_name}${NC}                                ${BRIGHT_GREEN}║${NC}"
+    echo -e "${BRIGHT_GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo
+    echo -e "${BRIGHT_BLUE}┌─ 配置详情 ───────────────────────────────────────────────────┐${NC}"
+    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_CYAN}🌐 镜像源:${NC} ${BRIGHT_WHITE}$mirror_name${NC}"
+    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_CYAN}🔗 域名:${NC} ${BRIGHT_WHITE}$mirror_url${NC}"
     echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_CYAN}📁 配置文件:${NC} ${BRIGHT_WHITE}$(get_config_path)${NC}"
     echo -e "${BRIGHT_BLUE}└─────────────────────────────────────────────────────────────┘${NC}"
     echo
@@ -1471,9 +1536,9 @@ validate_sources_config() {
         return 1
     fi
     
-    # 检查是否包含Worker域名
+    # 检查是否包含自定义源域名
     if ! echo "$config_content" | grep -q "$worker_domain"; then
-        echo_error "配置中未找到Worker域名"
+        echo_error "配置中未找到自定义源域名"
         return 1
     fi
     
@@ -1499,6 +1564,7 @@ validate_sources_config() {
 # 全局变量
 WORKER_DOMAIN=""
 PUBLIC_IP_CACHE=""
+SKIP_UPDATE=false
 
 # 镜像源测速结果
 declare -A MIRROR_SPEEDS
@@ -1552,13 +1618,18 @@ parse_arguments() {
                 OPERATION="list"
                 shift
                 ;;
+            -f|--fast)
+                # 快速启动，跳过软件包列表更新
+                SKIP_UPDATE=true
+                shift
+                ;;
             -*)
                 echo_error "未知选项: $1"
                 show_help
                 exit 1
                 ;;
             *)
-                # Worker域名
+                # 自定义源域名
                 if [ -z "$WORKER_DOMAIN" ]; then
                     WORKER_DOMAIN="$1"
                 fi
@@ -1625,7 +1696,7 @@ do_list() {
 do_switch() {
     local domain="$WORKER_DOMAIN"
     
-    # 获取Worker域名
+    # 获取自定义源域名
     if [ -z "$domain" ]; then
         domain="${WORKER_DOMAIN:-$DEFAULT_WORKER_DOMAIN}"
 
@@ -1748,7 +1819,7 @@ interactive_mirror_selection() {
                     continue
                 fi
 
-                # 将自定义域名当作Worker域名处理
+                # 将自定义域名当作自定义源域名处理
                 WORKER_DOMAIN="$custom_domain"
                 do_switch
 
@@ -1820,27 +1891,21 @@ switch_to_builtin_mirror() {
     case "$mirror_type" in
         "aliyun")
             generate_aliyun_sources "$os" "$version" "$codename" > "$config_path"
-            echo_success "已切换到阿里云镜像源"
             ;;
         "tencent")
             generate_tencent_sources "$os" "$version" "$codename" > "$config_path"
-            echo_success "已切换到腾讯云镜像源"
             ;;
         "huawei")
             generate_huawei_sources "$os" "$version" "$codename" > "$config_path"
-            echo_success "已切换到华为云镜像源"
             ;;
         "tsinghua")
             generate_tsinghua_sources "$os" "$version" "$codename" > "$config_path"
-            echo_success "已切换到清华大学镜像源"
             ;;
         "ustc")
             generate_ustc_sources "$os" "$version" "$codename" > "$config_path"
-            echo_success "已切换到中科大镜像源"
             ;;
         "netease")
             generate_netease_sources "$os" "$version" "$codename" > "$config_path"
-            echo_success "已切换到网易镜像源"
             ;;
         *)
             echo_error "不支持的镜像源类型: $mirror_type"
@@ -1852,6 +1917,28 @@ switch_to_builtin_mirror() {
     if [ "$PREVIEW_MODE" != true ]; then
         update_package_list
     fi
+
+    # 显示成功信息
+    case "$mirror_type" in
+        "aliyun")
+            show_builtin_completion "阿里云镜像源" "mirrors.aliyun.com"
+            ;;
+        "tencent")
+            show_builtin_completion "腾讯云镜像源" "mirrors.cloud.tencent.com"
+            ;;
+        "huawei")
+            show_builtin_completion "华为云镜像源" "mirrors.huaweicloud.com"
+            ;;
+        "tsinghua")
+            show_builtin_completion "清华大学镜像源" "mirrors.tuna.tsinghua.edu.cn"
+            ;;
+        "ustc")
+            show_builtin_completion "中科大镜像源" "mirrors.ustc.edu.cn"
+            ;;
+        "netease")
+            show_builtin_completion "网易镜像源" "mirrors.163.com"
+            ;;
+    esac
 }
 
 # 恢复官方源
@@ -2070,7 +2157,11 @@ main() {
     fi
 
     # 先更新软件包列表
-    update_package_list_on_startup
+    if [ "$SKIP_UPDATE" != "true" ]; then
+        update_package_list_on_startup
+    else
+        echo_info "⚡ 快速启动模式，跳过软件包列表更新"
+    fi
 
     # 检测和安装依赖
     check_and_install_dependencies
