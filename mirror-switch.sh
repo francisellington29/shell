@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 05:57:26 PM CST 2025
+# 构建时间: Mon Jun 30 06:11:31 PM CST 2025
 
 set -e
 
@@ -200,7 +200,8 @@ update_package_list_on_startup() {
     case "$os" in
         debian|ubuntu)
             if command -v apt-get >/dev/null 2>&1; then
-                if apt-get update >/dev/null 2>&1; then
+                echo "正在执行: apt-get update"
+                if apt-get update; then
                     echo_success "软件包列表更新完成"
                 else
                     echo_warning "软件包列表更新失败，但不影响继续运行"
@@ -209,7 +210,8 @@ update_package_list_on_startup() {
             ;;
         alpine)
             if command -v apk >/dev/null 2>&1; then
-                if apk update >/dev/null 2>&1; then
+                echo "正在执行: apk update"
+                if apk update; then
                     echo_success "软件包索引更新完成"
                 else
                     echo_warning "软件包索引更新失败，但不影响继续运行"
@@ -249,10 +251,12 @@ check_and_install_dependencies() {
         case "$os" in
             debian|ubuntu)
                 if command -v apt-get >/dev/null 2>&1; then
-                    apt-get update >/dev/null 2>&1
+                    echo "正在执行: apt-get update"
+                    apt-get update
                     for dep in "${missing_deps[@]}"; do
                         echo_info "正在安装依赖 $dep"
-                        if apt-get install -y "$dep" >/dev/null 2>&1; then
+                        echo "正在执行: apt-get install -y $dep"
+                        if apt-get install -y "$dep"; then
                             echo_success "$dep 安装成功"
                         else
                             echo_error "$dep 安装失败"
@@ -262,10 +266,12 @@ check_and_install_dependencies() {
                 ;;
             alpine)
                 if command -v apk >/dev/null 2>&1; then
-                    apk update >/dev/null 2>&1
+                    echo "正在执行: apk update"
+                    apk update
                     for dep in "${missing_deps[@]}"; do
                         echo_info "正在安装依赖 $dep"
-                        if apk add "$dep" >/dev/null 2>&1; then
+                        echo "正在执行: apk add $dep"
+                        if apk add "$dep"; then
                             echo_success "$dep 安装成功"
                         else
                             echo_error "$dep 安装失败"
@@ -771,10 +777,18 @@ test_mirrors_on_startup() {
     local slowest_time=0
     for host in "${!mirror_names[@]}"; do
         local url="https://$host/debian"
-        local start_time=$(date +%s%N)
+        # 使用time命令测量，兼容BusyBox
+        local start_time=$(date +%s)
         if curl -s --connect-timeout 2 --max-time 5 "$url/dists/" >/dev/null 2>&1; then
-            local end_time=$(date +%s%N)
-            local duration=$(( (end_time - start_time) / 1000000 ))
+            local end_time=$(date +%s)
+            local duration=$(( (end_time - start_time) * 1000 ))
+            # 如果时间差为0，使用curl的time功能进行更精确测量
+            if [ "$duration" -eq 0 ]; then
+                local time_total=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout 2 --max-time 5 "$url/dists/" 2>/dev/null)
+                # 将秒转换为毫秒，使用shell算术
+                duration=$(echo "$time_total" | sed 's/\.//' | sed 's/^0*//' | head -c 4)
+                [ -z "$duration" ] && duration=1
+            fi
             MIRROR_SPEEDS[$host]=$duration
             if [ "$duration" -lt "$fastest_time" ]; then
                 fastest_time="$duration"
@@ -1440,7 +1454,7 @@ update_package_list() {
     fi
     
     echo_info "正在更新软件包列表..."
-    
+    echo "正在执行: $update_cmd"
     if $update_cmd; then
         echo_success "软件包列表更新成功"
         return 0
@@ -1917,11 +1931,13 @@ test_network_connectivity() {
             url="http://$host/debian"
         fi
 
-        local start_time=$(date +%s%N)
+        # 使用curl的内置时间测量，兼容BusyBox
+        local duration=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout 3 --max-time 8 "$url/dists/" 2>/dev/null)
 
-        if curl -s --connect-timeout 3 --max-time 8 "$url/dists/" >/dev/null 2>&1; then
-            local end_time=$(date +%s%N)
-            local duration=$(( (end_time - start_time) / 1000000 )) # 转换为毫秒
+        if [ $? -eq 0 ] && [ -n "$duration" ]; then
+            # 将秒转换为毫秒，兼容BusyBox
+            duration=$(echo "$duration 1000" | awk '{print int($1*$2)}' 2>/dev/null)
+            [ -z "$duration" ] && duration=0
 
             # 判断是否是当前使用的源
             local is_current=""
