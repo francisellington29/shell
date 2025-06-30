@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 06:26:47 PM CST 2025
+# 构建时间: Mon Jun 30 08:01:35 PM CST 2025
 
 set -e
 
@@ -2093,15 +2093,15 @@ main() {
     # 检测和安装依赖
     check_and_install_dependencies
 
-    # 检测系统配置
+    # 检测系统配置和测速同时进行
     echo_info "🔍 正在检测系统配置..."
 
-    # 并行执行公网IP检测和镜像源测速
+    # 并行执行公网IP检测和镜像源测速，等待完成
     run_background_tasks
 
     echo_success "系统配置检测完成"
 
-    # 清屏并显示标题
+    # 测速完成后清屏并显示标题
     clear
     show_title
 
