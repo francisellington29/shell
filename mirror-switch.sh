@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 06:11:31 PM CST 2025
+# 构建时间: Mon Jun 30 06:26:47 PM CST 2025
 
 set -e
 
@@ -1679,6 +1679,12 @@ do_switch() {
 
 # 交互式镜像源选择
 interactive_mirror_selection() {
+    # 确保镜像源测速已完成
+    if [ "${MIRROR_TESTED[done]}" != "true" ]; then
+        echo_info "🔍 正在测试镜像源速度..."
+        test_mirrors_on_startup
+    fi
+
     while true; do
         show_mirror_menu
         read -p "$(echo -e "${BRIGHT_GREEN}❓ 请选择镜像源 [1-7,0]: ${NC}")" choice
