@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 05:39:46 PM CST 2025
+# 构建时间: Mon Jun 30 05:49:34 PM CST 2025
 
 set -e
 
@@ -405,8 +405,8 @@ detect_network() {
     local public_ipv6=""
     # 获取本地IPv4地址（排除回环和Docker）
     if command -v ip >/dev/null 2>&1; then
-        local_ipv4=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -1)
-        local_ipv6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null | grep -oP 'src \K\S+' | head -1)
+        local_ipv4=$(ip route get 8.8.8.8 2>/dev/null | sed -n 's/.*src \([^ ]*\).*/\1/p' | head -1)
+        local_ipv6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null | sed -n 's/.*src \([^ ]*\).*/\1/p' | head -1)
     fi
     # 备选方案获取本地IP
     if [ -z "$local_ipv4" ]; then
@@ -655,7 +655,10 @@ show_current_status() {
                 source_type="official"
             else
                 # 检查其他镜像源
-                local mirror_host=$(grep -o "https\?://[^/]*" "$config_path" 2>/dev/null | head -1 | sed 's|https\?://||')
+                local mirror_host=$(sed -n 's|.*https\{0,1\}://\([^/]*\).*|\1|p' "$config_path" 2>/dev/null | head -1)
+                if [ -z "$mirror_host" ]; then
+                    mirror_host=$(sed -n 's|.*http://\([^/]*\).*|\1|p' "$config_path" 2>/dev/null | head -1)
+                fi
                 if [ -n "$mirror_host" ]; then
                     current_source="第三方镜像源 ($mirror_host)"
                     source_type="third_party"
