@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 08:01:35 PM CST 2025
+# 构建时间: Mon Jun 30 10:28:41 PM CST 2025
 
 set -e
 
@@ -756,9 +756,6 @@ show_main_menu() {
     echo -e "${BRIGHT_CYAN}│${NC}                                                             ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
 }
-# 全局变量存储测试结果
-declare -A MIRROR_SPEEDS
-declare -A MIRROR_TESTED
 # 在脚本启动时测试镜像源速度
 test_mirrors_on_startup() {
     # 如果已经测试过，直接返回
@@ -1502,6 +1499,10 @@ validate_sources_config() {
 # 全局变量
 WORKER_DOMAIN=""
 PUBLIC_IP_CACHE=""
+
+# 镜像源测速结果
+declare -A MIRROR_SPEEDS
+declare -A MIRROR_TESTED
 DRY_RUN=false
 FORCE_YES=false
 OPERATION=""
@@ -1679,12 +1680,6 @@ do_switch() {
 
 # 交互式镜像源选择
 interactive_mirror_selection() {
-    # 确保镜像源测速已完成
-    if [ "${MIRROR_TESTED[done]}" != "true" ]; then
-        echo_info "🔍 正在测试镜像源速度..."
-        test_mirrors_on_startup
-    fi
-
     while true; do
         show_mirror_menu
         read -p "$(echo -e "${BRIGHT_GREEN}❓ 请选择镜像源 [1-7,0]: ${NC}")" choice
@@ -2039,11 +2034,9 @@ interactive_menu() {
     done
 }
 
-# 并行执行后台任务
-run_background_tasks() {
-    # 创建临时文件存储结果
+# 后台获取公网IP
+get_public_ip_background() {
     local public_ip_file="/tmp/mirror_switch_public_ip_$$"
-    local mirror_test_file="/tmp/mirror_switch_mirror_test_$$"
 
     # 后台获取公网IP
     (
@@ -2053,25 +2046,14 @@ run_background_tasks() {
     ) &
     local ip_pid=$!
 
-    # 后台测试镜像源速度
-    (
-        test_mirrors_on_startup
-        echo "done" > "$mirror_test_file"
-    ) &
-    local mirror_pid=$!
-
-    # 等待两个任务完成
+    # 等待公网IP获取完成
     wait $ip_pid 2>/dev/null
-    wait $mirror_pid 2>/dev/null
 
-    # 读取公网IP结果并存储到全局变量
+    # 读取公网IP结果
     if [ -f "$public_ip_file" ]; then
         PUBLIC_IP_CACHE=$(cat "$public_ip_file" 2>/dev/null)
         rm -f "$public_ip_file" 2>/dev/null
     fi
-
-    # 清理临时文件
-    rm -f "$mirror_test_file" 2>/dev/null
 }
 
 # 主函数
@@ -2093,11 +2075,15 @@ main() {
     # 检测和安装依赖
     check_and_install_dependencies
 
-    # 检测系统配置和测速同时进行
+    # 检测系统配置
     echo_info "🔍 正在检测系统配置..."
 
-    # 并行执行公网IP检测和镜像源测速，等待完成
-    run_background_tasks
+    # 后台获取公网IP
+    get_public_ip_background
+
+    # 直接进行镜像源测速
+    echo_info "⚡ 正在测试镜像源速度..."
+    test_mirrors_on_startup
 
     echo_success "系统配置检测完成"
 
