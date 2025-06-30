@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 05:49:34 PM CST 2025
+# 构建时间: Mon Jun 30 05:57:26 PM CST 2025
 
 set -e
 
@@ -193,6 +193,34 @@ format_timestamp() {
 }
 # ===== 系统检测模块 =====
 # 系统检测模块
+# 启动时更新软件包列表
+update_package_list_on_startup() {
+    echo_info "🔄 正在更新软件包列表..."
+    local os=$(detect_os)
+    case "$os" in
+        debian|ubuntu)
+            if command -v apt-get >/dev/null 2>&1; then
+                if apt-get update >/dev/null 2>&1; then
+                    echo_success "软件包列表更新完成"
+                else
+                    echo_warning "软件包列表更新失败，但不影响继续运行"
+                fi
+            fi
+            ;;
+        alpine)
+            if command -v apk >/dev/null 2>&1; then
+                if apk update >/dev/null 2>&1; then
+                    echo_success "软件包索引更新完成"
+                else
+                    echo_warning "软件包索引更新失败，但不影响继续运行"
+                fi
+            fi
+            ;;
+        *)
+            echo_info "跳过软件包列表更新（不支持的系统）"
+            ;;
+    esac
+}
 # 检测和安装依赖
 check_and_install_dependencies() {
     echo_info "🔍 正在检测系统依赖..."
@@ -2036,6 +2064,9 @@ main() {
     if ! validate_system_support; then
         exit 1
     fi
+
+    # 先更新软件包列表
+    update_package_list_on_startup
 
     # 检测和安装依赖
     check_and_install_dependencies
