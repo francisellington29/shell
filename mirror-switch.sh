@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Tue Jul  1 10:23:10 PM CST 2025
+# 构建时间: Tue Jul  1 11:13:41 PM CST 2025
 
 set -e
 
@@ -234,15 +234,6 @@ check_dependencies() {
             missing_deps+=("$dep")
         fi
     done
-    # 检测可选测速工具
-    SPEED_TEST_AVAILABLE=false
-    if command -v curl >/dev/null 2>&1; then
-        SPEED_TEST_AVAILABLE=true
-        SPEED_TEST_TOOL="curl"
-    elif command -v wget >/dev/null 2>&1; then
-        SPEED_TEST_AVAILABLE=true
-        SPEED_TEST_TOOL="wget"
-    fi
     # 如果有缺失的必需依赖
     if [ ${#missing_deps[@]} -gt 0 ]; then
         echo_warning "依赖缺失: ${missing_deps[*]}"
@@ -307,10 +298,6 @@ check_dependencies() {
         echo_success "系统所需依赖已安装"
     else
         echo_success "系统所需依赖已安装"
-    fi
-    # 提示可选依赖
-    if [ ${#missing_optional[@]} -gt 0 ]; then
-        echo_warning "缺少可选依赖: ${missing_optional[*]} (不影响核心功能)"
     fi
 }
 # 检测操作系统类型
@@ -762,91 +749,15 @@ show_main_menu() {
     echo -e "${BRIGHT_CYAN}│${NC}                                                             ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
 }
-# 在脚本启动时测试镜像源速度
-test_mirrors_on_startup() {
-    # 如果已经测试过，直接返回
-    if [ "${MIRROR_TESTED[done]}" = "true" ]; then
-        return
-    fi
-    declare -A mirror_names=(
-        ["mirrors.aliyun.com"]="阿里云"
-        ["mirrors.cloud.tencent.com"]="腾讯云"
-        ["mirrors.huaweicloud.com"]="华为云"
-        ["mirrors.tuna.tsinghua.edu.cn"]="清华大学"
-        ["mirrors.ustc.edu.cn"]="中科大"
-        ["mirrors.163.com"]="网易"
-    )
-    local fastest_time=9999
-    local slowest_time=0
-    for host in "${!mirror_names[@]}"; do
-        local url="https://$host/debian"
-        # 使用time命令测量，兼容BusyBox
-        local start_time=$(date +%s)
-        if curl -s --connect-timeout 2 --max-time 5 "$url/dists/" >/dev/null 2>&1; then
-            local end_time=$(date +%s)
-            local duration=$(( (end_time - start_time) * 1000 ))
-            # 如果时间差为0，使用curl的time功能进行更精确测量
-            if [ "$duration" -eq 0 ]; then
-                local time_total=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout 2 --max-time 5 "$url/dists/" 2>/dev/null)
-                # 将秒转换为毫秒，使用shell算术
-                duration=$(echo "$time_total" | sed 's/\.//' | sed 's/^0*//' | head -c 4)
-                [ -z "$duration" ] && duration=1
-            fi
-            MIRROR_SPEEDS[$host]=$duration
-            if [ "$duration" -lt "$fastest_time" ]; then
-                fastest_time="$duration"
-            fi
-            if [ "$duration" -gt "$slowest_time" ]; then
-                slowest_time="$duration"
-            fi
-        else
-            MIRROR_SPEEDS[$host]="failed"
-        fi
-    done
-    # 标记已测试
-    MIRROR_TESTED[done]="true"
-    MIRROR_TESTED[fastest]="$fastest_time"
-    MIRROR_TESTED[slowest]="$slowest_time"
-}
-# 获取源的速度显示
-get_speed_display() {
-    local host="$1"
-    local speed="${MIRROR_SPEEDS[$host]}"
-    # 如果没有测速功能，返回空字符串
-    if [ "$SPEED_TEST_AVAILABLE" != "true" ]; then
-        echo ""
-        return
-    fi
-    if [ "$speed" = "failed" ]; then
-        echo "${BRIGHT_RED}(连接失败)${NC}"
-    elif [ -n "$speed" ]; then
-        local label=""
-        if [ "$speed" = "${MIRROR_TESTED[fastest]}" ]; then
-            label=" ${BRIGHT_GREEN}(最快)${NC}"
-        elif [ "$speed" = "${MIRROR_TESTED[slowest]}" ]; then
-            label=" ${BRIGHT_RED}(最慢)${NC}"
-        fi
-        echo "${BRIGHT_YELLOW}(${speed}ms)${NC}$label"
-    else
-        echo ""
-    fi
-}
 # 显示镜像源选择菜单
 show_mirror_menu() {
     echo -e "${BRIGHT_GREEN}┌─ 🔄 镜像源选择 ───────────────────────────────────────────────┐${NC}"
-    # 显示各个镜像源及其速度
-    local aliyun_speed=$(get_speed_display "mirrors.aliyun.com")
-    local tencent_speed=$(get_speed_display "mirrors.cloud.tencent.com")
-    local huawei_speed=$(get_speed_display "mirrors.huaweicloud.com")
-    local tsinghua_speed=$(get_speed_display "mirrors.tuna.tsinghua.edu.cn")
-    local ustc_speed=$(get_speed_display "mirrors.ustc.edu.cn")
-    local netease_speed=$(get_speed_display "mirrors.163.com")
-    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}1.${NC} ${BRIGHT_BLUE}🇨🇳 阿里云${NC} $aliyun_speed"
-    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}2.${NC} ${BRIGHT_BLUE}🇨🇳 腾讯云${NC} $tencent_speed"
-    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}3.${NC} ${BRIGHT_BLUE}🇨🇳 华为云${NC} $huawei_speed"
-    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}4.${NC} ${BRIGHT_BLUE}🇨🇳 清华大学${NC} $tsinghua_speed"
-    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}5.${NC} ${BRIGHT_BLUE}🇨🇳 中科大${NC} $ustc_speed"
-    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}6.${NC} ${BRIGHT_BLUE}🇨🇳 网易${NC} $netease_speed"
+    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}1.${NC} ${BRIGHT_BLUE}🇨🇳 阿里云${NC}                                              ${BRIGHT_GREEN}│${NC}"
+    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}2.${NC} ${BRIGHT_BLUE}🇨🇳 腾讯云${NC}                                              ${BRIGHT_GREEN}│${NC}"
+    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}3.${NC} ${BRIGHT_BLUE}🇨🇳 华为云${NC}                                              ${BRIGHT_GREEN}│${NC}"
+    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}4.${NC} ${BRIGHT_BLUE}🇨🇳 清华大学${NC}                                            ${BRIGHT_GREEN}│${NC}"
+    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}5.${NC} ${BRIGHT_BLUE}🇨🇳 中科大${NC}                                              ${BRIGHT_GREEN}│${NC}"
+    echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}6.${NC} ${BRIGHT_BLUE}🇨🇳 网易${NC}                                                ${BRIGHT_GREEN}│${NC}"
     echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}7.${NC} ${BRIGHT_PURPLE}🌐 自定义源${NC}                                        ${BRIGHT_GREEN}│${NC}"
     echo -e "${BRIGHT_GREEN}│${NC}  ${BRIGHT_WHITE}0.${NC} ${BRIGHT_YELLOW}↩️ 返回主菜单${NC}                                      ${BRIGHT_GREEN}│${NC}"
     echo -e "${BRIGHT_GREEN}└─────────────────────────────────────────────────────────────┘${NC}"
@@ -1529,16 +1440,7 @@ validate_sources_config() {
 # ===== 主程序 =====
 # 全局变量
 WORKER_DOMAIN=""
-PUBLIC_IP_CACHE=""
 SKIP_UPDATE=false
-
-# 测速功能相关
-SPEED_TEST_AVAILABLE=false
-SPEED_TEST_TOOL=""
-
-# 镜像源测速结果
-declare -A MIRROR_SPEEDS
-declare -A MIRROR_TESTED
 DRY_RUN=false
 FORCE_YES=false
 OPERATION=""
@@ -2129,16 +2031,6 @@ main() {
 
     # 检测依赖
     check_dependencies
-
-    # 条件测速
-    if [ "$SPEED_TEST_AVAILABLE" = "true" ]; then
-        test_mirrors_on_startup
-    else
-        # 清空测速结果，设置默认状态
-        unset MIRROR_SPEEDS
-        declare -A MIRROR_SPEEDS
-        MIRROR_TESTED["done"]="true"
-    fi
 
     # 测速完成后清屏并显示标题
     clear
