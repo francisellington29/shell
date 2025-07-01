@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Wed Jul  2 12:07:05 AM CST 2025
+# 构建时间: Wed Jul  2 12:17:26 AM CST 2025
 
 set -e
 
@@ -269,6 +269,7 @@ check_dependencies() {
 # 检测操作系统类型
 detect_os() {
     if [ -f /etc/os-release ]; then
+        . /etc/os-release
         case "$ID" in
             debian|ubuntu|linuxmint|pop|elementary|zorin)
                 echo "debian"
@@ -304,6 +305,7 @@ detect_os() {
 # 检测系统版本
 detect_version() {
     if [ -f /etc/os-release ]; then
+        . /etc/os-release
         echo "${VERSION_ID:-unknown}"
     elif [ -f /etc/debian_version ]; then
         cat /etc/debian_version
@@ -316,6 +318,7 @@ detect_version() {
 # 检测系统代号
 detect_codename() {
     if [ -f /etc/os-release ]; then
+        . /etc/os-release
         echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-unknown}}"
     else
         echo "unknown"
