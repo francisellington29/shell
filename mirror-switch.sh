@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Mon Jun 30 11:29:58 PM CST 2025
+# 构建时间: Tue Jul  1 10:23:10 PM CST 2025
 
 set -e
 
@@ -193,51 +193,8 @@ format_timestamp() {
 }
 # ===== 系统检测模块 =====
 # 系统检测模块
-# 检测网络速度
-check_network_speed() {
-    local test_url
-    local os=$(detect_os)
-    case "$os" in
-        debian|ubuntu)
-            test_url="http://deb.debian.org/debian/"
-            ;;
-        alpine)
-            test_url="http://dl-cdn.alpinelinux.org/"
-            ;;
-        *)
-            return 0  # 未知系统，跳过检测
-            ;;
-    esac
-    # 测试网络速度（3秒超时）
-    local speed=$(curl -w '%{speed_download}' -o /dev/null -s --connect-timeout 3 --max-time 3 "$test_url" 2>/dev/null || echo "0")
-    local speed_kb=$(echo "$speed" | awk '{print int($1/1024)}')
-    if [ "$speed_kb" -lt 50 ]; then  # 小于50KB/s认为网络慢
-        return 1
-    else
-        return 0
-    fi
-}
 # 启动时更新软件包列表
 update_package_list_on_startup() {
-    # 检测网络速度
-    if ! check_network_speed; then
-        echo_warning "⚠️ 检测到网络较慢，软件包列表更新可能耗时较长"
-        echo_info "💡 提示：可以使用 --fast 参数跳过更新，或按 Ctrl+C 中断"
-        echo_info "跳过更新不会影响镜像源切换功能"
-        echo
-        # 等待用户输入
-        read -p "$(echo -e "${BRIGHT_YELLOW}是否继续更新？(Y/n): ${NC}")" choice
-        case "$choice" in
-            [Nn]*)
-                echo_info "⚡ 跳过软件包列表更新"
-                return 0
-                ;;
-            *)
-                echo_info "继续进行软件包列表更新..."
-                ;;
-        esac
-        echo  # 换行
-    fi
     echo_info "🔄 正在更新软件包列表..."
     local os=$(detect_os)
     case "$os" in
@@ -266,26 +223,26 @@ update_package_list_on_startup() {
             ;;
     esac
 }
-# 检测和安装依赖
-check_and_install_dependencies() {
-    echo_info "🔍 正在检测系统依赖..."
-    # 定义必需的依赖
-    local required_deps=("curl" "wget" "grep" "awk" "sed")
+# 检测核心依赖和可选工具
+check_dependencies() {
+    # 定义核心依赖（必须有）
+    local required_deps=("grep" "awk" "sed")
     local missing_deps=()
-    local optional_deps=("free" "df" "ip")
-    local missing_optional=()
-    # 检测必需依赖
+    # 检测核心依赖
     for dep in "${required_deps[@]}"; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             missing_deps+=("$dep")
         fi
     done
-    # 检测可选依赖
-    for dep in "${optional_deps[@]}"; do
-        if ! command -v "$dep" >/dev/null 2>&1; then
-            missing_optional+=("$dep")
-        fi
-    done
+    # 检测可选测速工具
+    SPEED_TEST_AVAILABLE=false
+    if command -v curl >/dev/null 2>&1; then
+        SPEED_TEST_AVAILABLE=true
+        SPEED_TEST_TOOL="curl"
+    elif command -v wget >/dev/null 2>&1; then
+        SPEED_TEST_AVAILABLE=true
+        SPEED_TEST_TOOL="wget"
+    fi
     # 如果有缺失的必需依赖
     if [ ${#missing_deps[@]} -gt 0 ]; then
         echo_warning "依赖缺失: ${missing_deps[*]}"
@@ -294,8 +251,13 @@ check_and_install_dependencies() {
         case "$os" in
             debian|ubuntu)
                 if command -v apt-get >/dev/null 2>&1; then
-                    echo "正在执行: apt-get update"
-                    apt-get update
+                    # 检查是否跳过更新
+                    if [ "$SKIP_UPDATE" != "true" ]; then
+                        echo "正在执行: apt-get update"
+                        apt-get update
+                    else
+                        echo_info "⚡ 快速模式：跳过 apt-get update，直接安装依赖"
+                    fi
                     for dep in "${missing_deps[@]}"; do
                         echo_info "正在安装依赖 $dep"
                         echo "正在执行: apt-get install -y $dep"
@@ -795,8 +757,7 @@ show_main_menu() {
     echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}3.${NC} ${BRIGHT_BLUE}💾 备份当前配置${NC}                                    ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}4.${NC} ${BRIGHT_MAGENTA}🔙 恢复备份配置${NC}                                    ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}5.${NC} ${BRIGHT_YELLOW}📋 查看备份列表${NC}                                    ${BRIGHT_CYAN}│${NC}"
-    echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}6.${NC} ${BRIGHT_GREEN}🌐 测试网络连接${NC}                                    ${BRIGHT_CYAN}│${NC}"
-    echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}7.${NC} ${BRIGHT_BLUE}❓ 显示帮助${NC}                                        ${BRIGHT_CYAN}│${NC}"
+    echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}6.${NC} ${BRIGHT_BLUE}❓ 显示帮助${NC}                                        ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}│${NC}  ${BRIGHT_WHITE}0.${NC} ${BRIGHT_RED}🚪 退出程序${NC}                                        ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}│${NC}                                                             ${BRIGHT_CYAN}│${NC}"
     echo -e "${BRIGHT_CYAN}└─────────────────────────────────────────────────────────────┘${NC}"
@@ -851,6 +812,11 @@ test_mirrors_on_startup() {
 get_speed_display() {
     local host="$1"
     local speed="${MIRROR_SPEEDS[$host]}"
+    # 如果没有测速功能，返回空字符串
+    if [ "$SPEED_TEST_AVAILABLE" != "true" ]; then
+        echo ""
+        return
+    fi
     if [ "$speed" = "failed" ]; then
         echo "${BRIGHT_RED}(连接失败)${NC}"
     elif [ -n "$speed" ]; then
@@ -1566,6 +1532,10 @@ WORKER_DOMAIN=""
 PUBLIC_IP_CACHE=""
 SKIP_UPDATE=false
 
+# 测速功能相关
+SPEED_TEST_AVAILABLE=false
+SPEED_TEST_TOOL=""
+
 # 镜像源测速结果
 declare -A MIRROR_SPEEDS
 declare -A MIRROR_TESTED
@@ -2063,7 +2033,7 @@ interactive_menu() {
         show_main_menu
 
         # 获取用户选择
-        read -p "$(echo -e "${BRIGHT_CYAN}❓ 请选择操作 [1-7,0]: ${NC}")" choice
+        read -p "$(echo -e "${BRIGHT_CYAN}❓ 请选择操作 [1-6,0]: ${NC}")" choice
 
         echo
         case "$choice" in
@@ -2092,12 +2062,6 @@ interactive_menu() {
                 read -p "$(echo -e "${BRIGHT_CYAN}按回车键继续...${NC}")"
                 ;;
             "6")
-                echo_info "🌐 测试网络连接..."
-                test_network_connectivity
-                echo
-                read -p "$(echo -e "${BRIGHT_CYAN}按回车键继续...${NC}")"
-                ;;
-            "7")
                 show_help
                 echo
                 read -p "$(echo -e "${BRIGHT_CYAN}按回车键继续...${NC}")"
@@ -2107,7 +2071,7 @@ interactive_menu() {
                 exit 0
                 ;;
             *)
-                echo_error "❌ 无效选择，请输入 0-7 之间的数字"
+                echo_error "❌ 无效选择，请输入 0-6 之间的数字"
                 echo
                 read -p "$(echo -e "${BRIGHT_CYAN}按回车键继续...${NC}")"
                 ;;
@@ -2163,34 +2127,26 @@ main() {
         echo_info "⚡ 快速启动模式，跳过软件包列表更新"
     fi
 
-    # 检测和安装依赖
-    check_and_install_dependencies
+    # 检测依赖
+    check_dependencies
 
-    # 检测系统配置
-    echo_info "🔍 正在检测系统配置..."
-
-    # 后台获取公网IP
-    get_public_ip_background
-
-    # 直接进行镜像源测速
-    echo_info "⚡ 正在测试镜像源速度..."
-    test_mirrors_on_startup
-
-    echo_success "系统配置检测完成"
+    # 条件测速
+    if [ "$SPEED_TEST_AVAILABLE" = "true" ]; then
+        test_mirrors_on_startup
+    else
+        # 清空测速结果，设置默认状态
+        unset MIRROR_SPEEDS
+        declare -A MIRROR_SPEEDS
+        MIRROR_TESTED["done"]="true"
+    fi
 
     # 测速完成后清屏并显示标题
     clear
     show_title
 
-    # 显示系统信息
-    get_system_info
-
-    # 检查网络连接
-    if ! check_network; then
+    # 简化的网络检查
+    if ! ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
         echo_warning "网络连接异常，可能影响操作"
-        if ! ask_confirmation "是否继续？"; then
-            exit 1
-        fi
     fi
 
     # 如果没有指定操作且不是强制模式，进入交互式菜单
