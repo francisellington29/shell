@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Tue Jul  1 11:13:41 PM CST 2025
+# 构建时间: Tue Jul  1 11:24:39 PM CST 2025
 
 set -e
 
@@ -242,13 +242,9 @@ check_dependencies() {
         case "$os" in
             debian|ubuntu)
                 if command -v apt-get >/dev/null 2>&1; then
-                    # 检查是否跳过更新
-                    if [ "$SKIP_UPDATE" != "true" ]; then
-                        echo "正在执行: apt-get update"
-                        apt-get update
-                    else
-                        echo_info "⚡ 快速模式：跳过 apt-get update，直接安装依赖"
-                    fi
+                    echo_warning "需要安装依赖，将进行必要的系统更新"
+                    echo "正在执行: apt-get update"
+                    apt-get update
                     for dep in "${missing_deps[@]}"; do
                         echo_info "正在安装依赖 $dep"
                         echo "正在执行: apt-get install -y $dep"
@@ -534,10 +530,8 @@ $SCRIPT_NAME v$SCRIPT_VERSION
   -b, --backup            仅创建备份
   -t, --test              测试自定义源连接
   -l, --list              列出备份
-  -f, --fast              快速启动，跳过软件包列表更新
 示例:
   $0                                          # 交互式模式
-  $0 --fast                                   # 快速启动（跳过更新）
   $0 -d mirror.yourdomain.com                # 指定自定义源域名
   $0 -y -d mirror.yourdomain.com             # 非交互模式
   $0 --test -d mirror.yourdomain.com         # 测试连接
@@ -1440,7 +1434,6 @@ validate_sources_config() {
 # ===== 主程序 =====
 # 全局变量
 WORKER_DOMAIN=""
-SKIP_UPDATE=false
 DRY_RUN=false
 FORCE_YES=false
 OPERATION=""
@@ -1488,11 +1481,6 @@ parse_arguments() {
                 ;;
             -l|--list)
                 OPERATION="list"
-                shift
-                ;;
-            -f|--fast)
-                # 快速启动，跳过软件包列表更新
-                SKIP_UPDATE=true
                 shift
                 ;;
             -*)
@@ -2022,12 +2010,8 @@ main() {
         exit 1
     fi
 
-    # 先更新软件包列表
-    if [ "$SKIP_UPDATE" != "true" ]; then
-        update_package_list_on_startup
-    else
-        echo_info "⚡ 快速启动模式，跳过软件包列表更新"
-    fi
+    # 跳过软件包列表更新，专注镜像源管理
+    echo_info "⚡ 跳过软件包列表更新，专注镜像源管理"
 
     # 检测依赖
     check_dependencies
