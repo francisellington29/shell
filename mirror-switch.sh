@@ -2,7 +2,7 @@
 
 # Linux Mirror Switch Script - 单文件版本
 # 自动生成，请勿手动编辑
-# 构建时间: Tue Jul  1 11:24:39 PM CST 2025
+# 构建时间: Wed Jul  2 12:07:05 AM CST 2025
 
 set -e
 
@@ -193,36 +193,6 @@ format_timestamp() {
 }
 # ===== 系统检测模块 =====
 # 系统检测模块
-# 启动时更新软件包列表
-update_package_list_on_startup() {
-    echo_info "🔄 正在更新软件包列表..."
-    local os=$(detect_os)
-    case "$os" in
-        debian|ubuntu)
-            if command -v apt-get >/dev/null 2>&1; then
-                echo "正在执行: apt-get update"
-                if apt-get update; then
-                    echo_success "软件包列表更新完成"
-                else
-                    echo_warning "软件包列表更新失败，但不影响继续运行"
-                fi
-            fi
-            ;;
-        alpine)
-            if command -v apk >/dev/null 2>&1; then
-                echo "正在执行: apk update"
-                if apk update; then
-                    echo_success "软件包索引更新完成"
-                else
-                    echo_warning "软件包索引更新失败，但不影响继续运行"
-                fi
-            fi
-            ;;
-        *)
-            echo_info "跳过软件包列表更新（不支持的系统）"
-            ;;
-    esac
-}
 # 检测核心依赖和可选工具
 check_dependencies() {
     # 定义核心依赖（必须有）
@@ -299,17 +269,34 @@ check_dependencies() {
 # 检测操作系统类型
 detect_os() {
     if [ -f /etc/os-release ]; then
-        local os_id=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
-        if [ -n "$os_id" ]; then
-            echo "$os_id"
-        else
-            # 备选方案：使用source方式
-            echo "${ID:-unknown}"
-        fi
+        case "$ID" in
+            debian|ubuntu|linuxmint|pop|elementary|zorin)
+                echo "debian"
+                ;;
+            alpine)
+                echo "alpine"
+                ;;
+            centos|rhel|fedora|rocky|almalinux)
+                echo "centos"
+                ;;
+            arch|manjaro|endeavouros)
+                echo "arch"
+                ;;
+            opensuse*|sles)
+                echo "opensuse"
+                ;;
+            *)
+                echo "unknown"
+                ;;
+        esac
     elif [ -f /etc/debian_version ]; then
         echo "debian"
     elif [ -f /etc/alpine-release ]; then
         echo "alpine"
+    elif [ -f /etc/redhat-release ]; then
+        echo "centos"
+    elif [ -f /etc/arch-release ]; then
+        echo "arch"
     else
         echo "unknown"
     fi
@@ -317,13 +304,7 @@ detect_os() {
 # 检测系统版本
 detect_version() {
     if [ -f /etc/os-release ]; then
-        local version_id=$(grep '^VERSION_ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
-        if [ -n "$version_id" ]; then
-            echo "$version_id"
-        else
-            # 备选方案：使用source方式
-            echo "${VERSION_ID:-unknown}"
-        fi
+        echo "${VERSION_ID:-unknown}"
     elif [ -f /etc/debian_version ]; then
         cat /etc/debian_version
     elif [ -f /etc/alpine-release ]; then
@@ -332,43 +313,21 @@ detect_version() {
         echo "unknown"
     fi
 }
-# 检测版本代号
+# 检测系统代号
 detect_codename() {
     if [ -f /etc/os-release ]; then
-        local codename=$(grep '^VERSION_CODENAME=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
-        if [ -n "$codename" ]; then
-            echo "$codename"
-        else
-            # 备选方案：使用source方式
-            echo "${VERSION_CODENAME:-unknown}"
-        fi
+        echo "${VERSION_CODENAME:-${UBUNTU_CODENAME:-unknown}}"
     else
         echo "unknown"
     fi
 }
 # 检测系统架构
 detect_arch() {
-    uname -m
+    uname -m 2>/dev/null || echo "unknown"
 }
-# 检测是否为root用户
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        echo_error "需要root权限运行此脚本"
-        echo_info "请使用: sudo $0"
-        exit 1
-    fi
-}
-# 检测网络连接
-check_network() {
-    local test_hosts=("8.8.8.8" "1.1.1.1" "114.114.114.114")
-    
-    for host in "${test_hosts[@]}"; do
-        if ping -c 1 -W 3 "$host" >/dev/null 2>&1; then
-            return 0
-        fi
-    done
-    
-    return 1
+# 检测内核版本
+detect_kernel() {
+    uname -r 2>/dev/null || echo "unknown"
 }
 # 验证系统支持
 validate_system_support() {
@@ -383,117 +342,6 @@ validate_system_support() {
     echo_error "不支持的操作系统: $os"
     echo_info "支持的系统: ${SUPPORTED_DISTROS[*]}"
     return 1
-}
-# 检测内核信息
-detect_kernel() {
-    uname -r 2>/dev/null || echo "unknown"
-}
-# 检测CPU信息
-detect_cpu_info() {
-    if command -v lscpu >/dev/null 2>&1; then
-        local cpu_model=$(lscpu | grep "Model name" | cut -d':' -f2 | sed 's/^[[:space:]]*//')
-        local cpu_cores=$(lscpu | grep "^CPU(s):" | cut -d':' -f2 | sed 's/^[[:space:]]*//')
-        echo "${cpu_model:-Unknown} (${cpu_cores:-?} cores)"
-    else
-        grep "model name" /proc/cpuinfo 2>/dev/null | head -1 | cut -d':' -f2 | sed 's/^[[:space:]]*//' || echo "unknown"
-    fi
-}
-# 检测内存信息
-detect_memory() {
-    if command -v free >/dev/null 2>&1; then
-        # 使用free命令获取内存信息并计算使用百分比
-        local mem_info=$(free -h | grep "Mem:")
-        local total=$(echo "$mem_info" | awk '{print $2}')
-        local available=$(echo "$mem_info" | awk '{print $7}')
-        local used_percent=$(free | grep "Mem:" | awk '{printf "%.0f", ($3/$2)*100}')
-        echo "$total total, $available available (${used_percent}% used)"
-    else
-        awk '/MemTotal/ {total=$2/1024/1024; printf "%.1fGB total", total} /MemAvailable/ {avail=$2/1024/1024; printf ", %.1fGB available", avail}' /proc/meminfo 2>/dev/null || echo "unknown"
-    fi
-}
-# 检测硬盘信息
-detect_disk() {
-    if command -v df >/dev/null 2>&1; then
-        df -h / 2>/dev/null | tail -1 | awk '{print $2 " total, " $4 " free (" $5 " used)"}'
-    else
-        echo "unknown"
-    fi
-}
-# 检测网络信息
-detect_network() {
-    local local_ipv4=""
-    local local_ipv6=""
-    local public_ipv4=""
-    local public_ipv6=""
-    # 获取本地IPv4地址（排除回环和Docker）
-    if command -v ip >/dev/null 2>&1; then
-        local_ipv4=$(ip route get 8.8.8.8 2>/dev/null | sed -n 's/.*src \([^ ]*\).*/\1/p' | head -1)
-        local_ipv6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null | sed -n 's/.*src \([^ ]*\).*/\1/p' | head -1)
-    fi
-    # 备选方案获取本地IP
-    if [ -z "$local_ipv4" ]; then
-        local_ipv4=$(hostname -I 2>/dev/null | awk '{print $1}' | grep -v "^127\." | grep -v "^172\.17\." | head -1)
-    fi
-    # 使用缓存的公网IP（如果有的话）
-    if [ -n "$PUBLIC_IP_CACHE" ]; then
-        public_ipv4="$PUBLIC_IP_CACHE"
-    fi
-    # 显示格式：本地IP (公网IP)
-    local ipv4_display="${local_ipv4:-none}"
-    local ipv6_display="${local_ipv6:-none}"
-    if [ -n "$public_ipv4" ] && [ "$public_ipv4" != "$local_ipv4" ]; then
-        ipv4_display="$ipv4_display ($public_ipv4)"
-    fi
-    if [ -n "$public_ipv6" ] && [ "$public_ipv6" != "$local_ipv6" ]; then
-        ipv6_display="$ipv6_display ($public_ipv6)"
-    fi
-    echo "$ipv4_display / $ipv6_display"
-}
-# 检测虚拟化类型
-detect_virtualization() {
-    # 检查systemd-detect-virt
-    if command -v systemd-detect-virt >/dev/null 2>&1; then
-        local virt=$(systemd-detect-virt 2>/dev/null)
-        [ "$virt" != "none" ] && echo "$virt" && return
-    fi
-    # 检查DMI信息
-    if [ -r /sys/class/dmi/id/product_name ]; then
-        local product=$(cat /sys/class/dmi/id/product_name 2>/dev/null)
-        case "$product" in
-            *VMware*) echo "vmware" ;;
-            *VirtualBox*) echo "virtualbox" ;;
-            *KVM*|*QEMU*) echo "kvm" ;;
-            *Xen*) echo "xen" ;;
-            *) echo "physical" ;;
-        esac
-    else
-        echo "unknown"
-    fi
-}
-# 获取系统信息摘要
-get_system_info() {
-    local os=$(detect_os)
-    local version=$(detect_version)
-    local codename=$(detect_codename)
-    local arch=$(detect_arch)
-    local kernel=$(detect_kernel)
-    local cpu=$(detect_cpu_info)
-    local memory=$(detect_memory)
-    local disk=$(detect_disk)
-    local network=$(detect_network)
-    local virt=$(detect_virtualization)
-    echo -e "${BRIGHT_BLUE}┌─ ${ICON_GEAR} 系统信息 ─────────────────────────────────────────────┐${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}🖥️  操作系统:${NC} ${BRIGHT_WHITE}$os${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}📦  版本:${NC}     ${BRIGHT_WHITE}$version${NC}"
-    [ "$codename" != "unknown" ] && echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}🏷️  代号:${NC}     ${BRIGHT_WHITE}$codename${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}⚙️  内核:${NC}     ${BRIGHT_WHITE}$kernel${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}🏗️  架构:${NC}     ${BRIGHT_WHITE}$arch${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}🔧  CPU:${NC}      ${BRIGHT_WHITE}$cpu${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}💾  内存:${NC}     ${BRIGHT_WHITE}$memory${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}💿  硬盘:${NC}     ${BRIGHT_WHITE}$disk${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}🌐  网络:${NC}     ${BRIGHT_WHITE}$network${NC}"
-    echo -e "${BRIGHT_BLUE}│${NC} ${BRIGHT_GREEN}☁️  虚拟化:${NC}   ${BRIGHT_WHITE}$virt${NC}"
-    echo -e "${BRIGHT_BLUE}└─────────────────────────────────────────────────────────────┘${NC}"
 }
 # 检测包管理器
 detect_package_manager() {
@@ -1434,6 +1282,15 @@ validate_sources_config() {
 # ===== 主程序 =====
 # 全局变量
 WORKER_DOMAIN=""
+
+# 检查root权限
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo_error "此脚本需要root权限运行"
+        echo_info "请使用: sudo $0"
+        exit 1
+    fi
+}
 DRY_RUN=false
 FORCE_YES=false
 OPERATION=""
@@ -1822,96 +1679,7 @@ restore_official_sources() {
     update_package_list
 }
 
-# 测试网络连接
-test_network_connectivity() {
-    echo -e "${BRIGHT_GREEN}┌─ 🌐 网络连接测试 ─────────────────────────────────────────────┐${NC}"
-    echo -e "${BRIGHT_GREEN}│${NC}                                                             ${BRIGHT_GREEN}│${NC}"
 
-    # 测试基本网络连接
-    echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_CYAN}🔍 测试基本网络连接...${NC}"
-    if check_network; then
-        echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_GREEN}✅ 基本网络连接正常${NC}"
-    else
-        echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_RED}❌ 基本网络连接异常${NC}"
-    fi
-
-
-
-    # 获取当前使用的源
-    local config_path=$(get_config_path)
-    local current_source=""
-    if [ -f "$config_path" ]; then
-        if grep -q "mirrors.aliyun.com" "$config_path" 2>/dev/null; then
-            current_source="mirrors.aliyun.com"
-        elif grep -q "mirrors.cloud.tencent.com" "$config_path" 2>/dev/null; then
-            current_source="mirrors.cloud.tencent.com"
-        elif grep -q "mirrors.huaweicloud.com" "$config_path" 2>/dev/null; then
-            current_source="mirrors.huaweicloud.com"
-        elif grep -q "mirrors.tuna.tsinghua.edu.cn" "$config_path" 2>/dev/null; then
-            current_source="mirrors.tuna.tsinghua.edu.cn"
-        elif grep -q "mirrors.ustc.edu.cn" "$config_path" 2>/dev/null; then
-            current_source="mirrors.ustc.edu.cn"
-        elif grep -q "mirrors.163.com" "$config_path" 2>/dev/null; then
-            current_source="mirrors.163.com"
-        elif grep -q "deb.debian.org" "$config_path" 2>/dev/null; then
-            current_source="deb.debian.org"
-        fi
-    fi
-
-    # 定义所有镜像源
-    declare -A mirror_sources=(
-        ["mirrors.aliyun.com"]="阿里云"
-        ["mirrors.cloud.tencent.com"]="腾讯云"
-        ["mirrors.huaweicloud.com"]="华为云"
-        ["mirrors.tuna.tsinghua.edu.cn"]="清华大学"
-        ["mirrors.ustc.edu.cn"]="中科大"
-        ["mirrors.163.com"]="网易"
-        ["deb.debian.org"]="官方源"
-    )
-
-    # 测试所有镜像源
-    echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_CYAN}🔍 测试所有镜像源连接和速度...${NC}"
-
-    for host in "${!mirror_sources[@]}"; do
-        local source_name="${mirror_sources[$host]}"
-        local url="https://$host/debian"
-        if [[ "$host" == "deb.debian.org" ]]; then
-            url="http://$host/debian"
-        fi
-
-        # 使用curl的内置时间测量，兼容BusyBox
-        local duration=$(curl -o /dev/null -s -w "%{time_total}" --connect-timeout 3 --max-time 8 "$url/dists/" 2>/dev/null)
-
-        if [ $? -eq 0 ] && [ -n "$duration" ]; then
-            # 将秒转换为毫秒，兼容BusyBox
-            duration=$(echo "$duration 1000" | awk '{print int($1*$2)}' 2>/dev/null)
-            [ -z "$duration" ] && duration=0
-
-            # 判断是否是当前使用的源
-            local is_current=""
-            if [[ "$host" == "$current_source" ]]; then
-                is_current=" ${BRIGHT_BLUE}(当前)${NC}"
-            fi
-
-            if [ "$duration" -lt 1000 ]; then
-                echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_GREEN}✅ $source_name $host 连接正常 (${duration}ms)${NC}$is_current"
-            elif [ "$duration" -lt 3000 ]; then
-                echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_YELLOW}⚠️ $source_name $host 连接较慢 (${duration}ms)${NC}$is_current"
-            else
-                echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_RED}🐌 $source_name $host 连接很慢 (${duration}ms)${NC}$is_current"
-            fi
-        else
-            local is_current=""
-            if [[ "$host" == "$current_source" ]]; then
-                is_current=" ${BRIGHT_BLUE}(当前)${NC}"
-            fi
-            echo -e "${BRIGHT_GREEN}│${NC} ${BRIGHT_RED}❌ $source_name $host 连接失败${NC}$is_current"
-        fi
-    done
-
-    echo -e "${BRIGHT_GREEN}│${NC}                                                             ${BRIGHT_GREEN}│${NC}"
-    echo -e "${BRIGHT_GREEN}└─────────────────────────────────────────────────────────────┘${NC}"
-}
 
 # 交互式主菜单
 interactive_menu() {
@@ -1970,32 +1738,11 @@ interactive_menu() {
         # 清屏并重新显示标题
         clear
         show_title
-        get_system_info
         echo
     done
 }
 
-# 后台获取公网IP
-get_public_ip_background() {
-    local public_ip_file="/tmp/mirror_switch_public_ip_$$"
 
-    # 后台获取公网IP
-    (
-        if command -v curl >/dev/null 2>&1; then
-            curl -s --connect-timeout 1 --max-time 2 ipv4.icanhazip.com 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' > "$public_ip_file" 2>/dev/null
-        fi
-    ) &
-    local ip_pid=$!
-
-    # 等待公网IP获取完成
-    wait $ip_pid 2>/dev/null
-
-    # 读取公网IP结果
-    if [ -f "$public_ip_file" ]; then
-        PUBLIC_IP_CACHE=$(cat "$public_ip_file" 2>/dev/null)
-        rm -f "$public_ip_file" 2>/dev/null
-    fi
-}
 
 # 主函数
 main() {
